@@ -25,6 +25,11 @@ func NewWhiteNoiseMap(width, height int, seeder *seed.Seeder) WhiteNoiseMap {
 	return WhiteNoiseMap{Map: values}
 }
 
+func (wnm *WhiteNoiseMap) ScalePixel(z, x int, min, max float64) float64 {
+	wnm.Map[z][x] = (wnm.Map[z][x] * (max - min)) + min
+	return wnm.Map[z][x]
+}
+
 func (wnm *WhiteNoiseMap) String() string {
 	str := ""
 	for _, row := range wnm.Map {

@@ -1,97 +1,493 @@
 package world
 
-import "github.com/MoraGames/warld/seed"
+import (
+	"fmt"
+	"math"
 
-func GenerateWorldMatrix(seed *seed.Seed) *WorldMatrix {
+	"github.com/MoraGames/warld/coord"
+	"github.com/MoraGames/warld/noiseMap"
+	"github.com/MoraGames/warld/seed"
+)
+
+// X Width
+// Y Height (Depth if negative)
+// Z Length
+
+func InitializeWorld(worldWidth, worldHeight, worldLength int, seeder *seed.Seeder) *World {
 	// Create a new world map
-	worldMatrix := make(WorldMatrix, 5)
-	for i := range worldMatrix {
-		worldMatrix[i] = make([]Tile, 5)
-		for j := range worldMatrix[i] {
-			worldMatrix[i][j] = NewTile()
+	worldMatrix := make(WorldMatrix, worldLength)
+	for z := range worldMatrix {
+		worldMatrix[z] = make([]Tile, worldWidth)
+		for x := range worldMatrix[z] {
+			worldMatrix[z][x] = NewTile()
 		}
 	}
 
-	// Generate the world map
-	// TODO: Implement the world map generation
+	// Create a new world
+	w := World{
+		Seeder:          seeder,
+		Data:            NewWorldData(worldWidth, worldHeight, worldLength),
+		Map:             worldMatrix,
+		Temperature:     noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 8, 256, seeder),
+		Humidity:        noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 8, 256, seeder),
+		Continentalness: noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 8, 256, seeder),
+		Altitude:        noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 8, 256, seeder),
+		Variants:        noiseMap.NewWhiteNoiseMap(worldWidth, worldLength, seeder),
+	}
 
-	// Return the world map
-	return &worldMatrix
+	// Generate the base world map (only oceans and continents)
+	worldMatrixFirstIteration(&w)
+
+	// Return the world data structure as a pointer
+	return &w
 }
 
-func ZoomWorld(worldMatrixPtr *WorldMatrix) {
-	// Retrieve the world map
-	worldMatrix := *worldMatrixPtr
+func worldMatrixFirstIteration(worldPtr *World) {
+	// Retrieve the world
+	w := *worldPtr
+
+	// Initialize the world map
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			// Convert the range value from [-1, 1] to [0, 5]
+			w.Continentalness.ScalePixel(z, x, 0, 5)
+
+			// Set the typology of the world map tile based on the continentalness noise map
+			// 1/5 of the world map is land
+			if w.Continentalness.Map[z][x] > 4.0 {
+				w.Map[z][x].Labels[GroupCategory] = CategoryLand
+			} else {
+				w.Map[z][x].Labels[GroupCategory] = CategoryOcean
+			}
+		}
+	}
+
+	// Update the world
+	*worldPtr = w
+}
+
+func ZoomWorld(worldPtr *World) {
+	// Retrieve the world
+	w := *worldPtr
 
 	// Zoom the world map (each tile becomes 2x2 tiles)
-	// TODO: Implement ZoomWorld
+	worldMatrix := make(WorldMatrix, worldPtr.Data.Length*2)
+	for z := range worldMatrix {
+		worldMatrix[z] = make([]Tile, worldPtr.Data.Width*2)
+		for x := range worldMatrix[z] {
+			//worldMatrix[z][x] = NewTile()
+			// Copy the tile's data from the old world map to the new world map
+			worldMatrix[z][x] = w.Map[z/2][x/2]
+		}
+	}
 
-	// Update the world map
-	*worldMatrixPtr = worldMatrix
+	w.Data.Width *= 2
+	w.Data.Length *= 2
+	w.Map = worldMatrix
+
+	// Introduce some randomness variation to the new world map
+	Smudge(&w)
+
+	// Update the world
+	*worldPtr = w
 }
 
-func AddIslands(worldMatrixPtr *WorldMatrix) {
+func Smudge(worldPtr *World) {
 	// Retrieve the world map
-	worldMatrix := *worldMatrixPtr
+	w := *worldPtr
 
-	// Add islands to the world map (randomly located, the number of islands is based on the map size)
-	// TODO: Implement AddIslands
+	// Smudge the world map
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			if w.Map[z][x].Labels[GroupCategory] == CategoryLand {
+				// Get the current coordinate
+				current := coord.NewCoord(z, x)
+
+				//fmt.Printf("[DEBUG] > z = %v | x = %v | lenght = %v | width = %v | map lenght = %v | map width = %v\n", z, x, w.Data.Length, w.Data.Width, len(w.Map), len(w.Map[0]))
+
+				// Get all 8 neighbors of the current coordinate and choose randomly 3 of them
+				neighborsCoords := coord.ConcatenateCoordSlices(
+					current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1),
+					current.GetDiagonalNeighbors(w.Data.Length-1, w.Data.Width-1),
+				)
+				choosedNeighbor := neighborsCoords[w.Seeder.Random.IntN(len(neighborsCoords))]
+
+				//fmt.Printf("[DEBUG] -> current = %+v | choosed neighbor = %+v\n", current, neighbor)
+
+				// Set it equal to the current with a 75% chance, if fails, set the current equal to the neighbor with a 75% chance
+				if w.Seeder.Random.IntN(4) == 0 {
+					w.Map[choosedNeighbor.Z][choosedNeighbor.X] = w.Map[z][x]
+				} else {
+					if w.Seeder.Random.IntN(4) == 0 {
+						w.Map[z][x] = w.Map[choosedNeighbor.Z][choosedNeighbor.X]
+					}
+				}
+			}
+		}
+	}
 
 	// Update the world map
-	*worldMatrixPtr = worldMatrix
+	*worldPtr = w
 }
 
-func RemoveTooMuchOceans(worldMatrixPtr *WorldMatrix) {
+func AddIslands(worldPtr *World) {
 	// Retrieve the world map
-	worldMatrix := *worldMatrixPtr
+	w := *worldPtr
+
+	// Generate the coordinates of a random amount (based on the map size) of islands
+	//proportionalAmount := int(math.Round(float64(w.Data.Length*w.Data.Width) / 8))
+	//amountVariation := w.Seeder.Random.IntN(5) - 2 // [-2,+2]
+	// amount := proportionalAmount + amountVariation
+	amount := int(math.Round(float64(w.Data.Length*w.Data.Width) / 10))
+	randomCoords := make(coord.CoordSlice, 0)
+	for i := 0; i < amount; i++ {
+		randomCoords = append(randomCoords, coord.NewCoord(w.Seeder.Random.IntN(w.Data.Length), w.Seeder.Random.IntN(w.Data.Width)))
+	}
+
+	// For each coordinate, set it as land (create an island)
+	for _, coord := range randomCoords {
+		w.Map[coord.Z][coord.X].Labels[GroupCategory] = CategoryLand
+	}
+
+	// Update the world map
+	*worldPtr = w
+}
+
+func RemoveTooMuchOceans(worldPtr *World) {
+	// Retrieve the world map
+	w := *worldPtr
 
 	// Remove too much oceans from the world map, replacing them with land
-	// TODO: Implement RemoveTooMuchOceans
+	// If a tile is ocean and as aligned neighbors all oceans, set it as land with a 50% chance
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			if w.Map[z][x].Labels[GroupCategory] == CategoryOcean {
+				// Get the current coordinate
+				current := coord.NewCoord(z, x)
+
+				// Get the 4 aligned neighbors of the current coordinate
+				alignedNeighborsCoords := current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1)
+
+				// Check if all the aligned neighbors are oceans
+				allOceans := true
+				for _, neighbor := range alignedNeighborsCoords {
+					if w.Map[neighbor.Z][neighbor.X].Labels[GroupCategory] != CategoryOcean {
+						allOceans = false
+						break
+					}
+				}
+
+				// If all the aligned neighbors are oceans, set the current as land with a 50% chance
+				if allOceans {
+					if w.Seeder.Random.IntN(2) == 0 {
+						w.Map[z][x].Labels[GroupCategory] = CategoryLand
+					}
+				}
+			}
+		}
+	}
 
 	// Update the world map
-	*worldMatrixPtr = worldMatrix
+	*worldPtr = w
 }
 
-func AddTemperatures(worldMatrixPtr *WorldMatrix) {
+func AddTemperatures(worldPtr *World) {
 	// Retrieve the world map
-	worldMatrix := *worldMatrixPtr
+	w := *worldPtr
 
-	// Add temperatures to the world map
-	// TODO: Implement AddTemperatures
+	// Add temperatures to the world map based on the temperature noise map
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			if z > w.Data.Length-3 || x > w.Data.Width-3 {
+				fmt.Printf("[DEBUG] -> z = %v | x = %v | lenght = %v | width = %v | map lenght = %v | map width = %v\n", z, x, w.Data.Length, w.Data.Width, len(w.Map), len(w.Map[0]))
+			}
+			// Convert the range value from [-1, 1] to [0, 8]
+			w.Temperature.ScalePixel(z, x, 0, 8)
+
+			// Set the temperature of the world map tile based on the temperature noise map
+			switch {
+			case w.Temperature.Map[z][x] >= 7.0:
+				w.Map[z][x].Labels[GroupMacroTemperature] = MacroTemperatureWarm
+				w.Map[z][x].Labels[GroupTemperature] = Temperature7
+			case w.Temperature.Map[z][x] >= 6.0:
+				w.Map[z][x].Labels[GroupMacroTemperature] = MacroTemperatureWarm
+				w.Map[z][x].Labels[GroupTemperature] = Temperature6
+			case w.Temperature.Map[z][x] >= 5.0:
+				w.Map[z][x].Labels[GroupMacroTemperature] = MacroTemperatureTemperate
+				w.Map[z][x].Labels[GroupTemperature] = Temperature5
+			case w.Temperature.Map[z][x] >= 4.0:
+				w.Map[z][x].Labels[GroupMacroTemperature] = MacroTemperatureTemperate
+				w.Map[z][x].Labels[GroupTemperature] = Temperature4
+			case w.Temperature.Map[z][x] >= 3.0:
+				w.Map[z][x].Labels[GroupMacroTemperature] = MacroTemperatureCold
+				w.Map[z][x].Labels[GroupTemperature] = Temperature3
+			case w.Temperature.Map[z][x] >= 2.0:
+				w.Map[z][x].Labels[GroupMacroTemperature] = MacroTemperatureCold
+				w.Map[z][x].Labels[GroupTemperature] = Temperature2
+			case w.Temperature.Map[z][x] >= 1.0:
+				w.Map[z][x].Labels[GroupMacroTemperature] = MacroTemperatureFreezing
+				w.Map[z][x].Labels[GroupTemperature] = Temperature1
+			case w.Temperature.Map[z][x] >= 0.0:
+				w.Map[z][x].Labels[GroupMacroTemperature] = MacroTemperatureFreezing
+				w.Map[z][x].Labels[GroupTemperature] = Temperature0
+			}
+		}
+	}
+
+	// If a warm tile has at least 1 cold/freezing neighbor, set it as temperate (5)
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			if w.Map[z][x].Labels[GroupMacroTemperature] == MacroTemperatureWarm {
+				// Get the current coordinate
+				current := coord.NewCoord(z, x)
+
+				// Get all 8 neighbors of the current coordinate
+				neighborsCoords := coord.ConcatenateCoordSlices(
+					current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1),
+					current.GetDiagonalNeighbors(w.Data.Length-1, w.Data.Width-1),
+				)
+
+				// Check if at least 1 neighbor is cold/freezing, if so, set the current as temperate (5)
+				for _, neighbor := range neighborsCoords {
+					if w.Map[neighbor.Z][neighbor.X].Labels[GroupMacroTemperature] == MacroTemperatureCold || w.Map[neighbor.Z][neighbor.X].Labels[GroupMacroTemperature] == MacroTemperatureFreezing {
+						w.Map[z][x].Labels[GroupMacroTemperature] = MacroTemperatureTemperate
+						w.Map[z][x].Labels[GroupTemperature] = Temperature5
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// If a freezing tile has at least 1 warm/temperate neighbor, set it as cold (2)
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			if w.Map[z][x].Labels[GroupMacroTemperature] == MacroTemperatureFreezing {
+				// Get the current coordinate
+				current := coord.NewCoord(z, x)
+
+				// Get all 8 neighbors of the current coordinate
+				neighborsCoords := coord.ConcatenateCoordSlices(
+					current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1),
+					current.GetDiagonalNeighbors(w.Data.Length-1, w.Data.Width-1),
+				)
+
+				// Check if at least 1 neighbor is warm/temperate, if so, set the current as cold
+				for _, neighbor := range neighborsCoords {
+					if w.Map[neighbor.Z][neighbor.X].Labels[GroupMacroTemperature] == MacroTemperatureWarm || w.Map[neighbor.Z][neighbor.X].Labels[GroupMacroTemperature] == MacroTemperatureTemperate {
+						w.Map[z][x].Labels[GroupMacroTemperature] = MacroTemperatureCold
+						w.Map[z][x].Labels[GroupTemperature] = Temperature2
+						break
+					}
+				}
+			}
+		}
+	}
 
 	// Update the world map
-	*worldMatrixPtr = worldMatrix
+	*worldPtr = w
 }
 
-func AddPrecipitations(worldMatrixPtr *WorldMatrix) {
+func AddHumidity(worldPtr *World) {
 	// Retrieve the world map
-	worldMatrix := *worldMatrixPtr
+	w := *worldPtr
 
-	// Add precipitations to the world map
-	// TODO: Implement AddPrecipitations
+	// Add humidity to the world map based on the humidity noise map
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			// Convert the range value from [-1, 1] to [0, 8]
+			w.Humidity.ScalePixel(z, x, 0, 8)
+
+			// Set the precipitation of the world map tile based on the temperature noise map
+			switch {
+			case w.Humidity.Map[z][x] >= 7.0:
+				w.Map[z][x].Labels[GroupMacroHumidity] = MacroHumidityHigh
+				w.Map[z][x].Labels[GroupHumidity] = Humidity7
+			case w.Humidity.Map[z][x] >= 6.0:
+				w.Map[z][x].Labels[GroupMacroHumidity] = MacroHumidityHigh
+				w.Map[z][x].Labels[GroupHumidity] = Humidity6
+			case w.Humidity.Map[z][x] >= 5.0:
+				w.Map[z][x].Labels[GroupMacroHumidity] = MacroHumidityModerate
+				w.Map[z][x].Labels[GroupHumidity] = Humidity5
+			case w.Humidity.Map[z][x] >= 4.0:
+				w.Map[z][x].Labels[GroupMacroHumidity] = MacroHumidityModerate
+				w.Map[z][x].Labels[GroupHumidity] = Humidity4
+			case w.Humidity.Map[z][x] >= 3.0:
+				w.Map[z][x].Labels[GroupMacroHumidity] = MacroHumidityLow
+				w.Map[z][x].Labels[GroupHumidity] = Humidity3
+			case w.Humidity.Map[z][x] >= 2.0:
+				w.Map[z][x].Labels[GroupMacroHumidity] = MacroHumidityLow
+				w.Map[z][x].Labels[GroupHumidity] = Humidity2
+			case w.Humidity.Map[z][x] >= 1.0:
+				w.Map[z][x].Labels[GroupMacroHumidity] = MacroHumidityMinimal
+				w.Map[z][x].Labels[GroupHumidity] = Humidity1
+			case w.Humidity.Map[z][x] >= 0.0:
+				w.Map[z][x].Labels[GroupMacroHumidity] = MacroHumidityMinimal
+				w.Map[z][x].Labels[GroupHumidity] = Humidity0
+			}
+		}
+	}
+
+	// If a high humidity tile has at least 1 low/minimal humidity neighbor, set it as moderate (5)
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			if w.Map[z][x].Labels[GroupMacroHumidity] == MacroHumidityHigh {
+				// Get the current coordinate
+				current := coord.NewCoord(z, x)
+
+				// Get all 8 neighbors of the current coordinate
+				neighborsCoords := coord.ConcatenateCoordSlices(
+					current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1),
+					current.GetDiagonalNeighbors(w.Data.Length-1, w.Data.Width-1),
+				)
+
+				// Check if at least 1 neighbor is low/minimal humidity, if so, set the current as moderate (5)
+				for _, neighbor := range neighborsCoords {
+					if w.Map[neighbor.Z][neighbor.X].Labels[GroupMacroHumidity] == MacroHumidityLow || w.Map[neighbor.Z][neighbor.X].Labels[GroupMacroHumidity] == MacroHumidityMinimal {
+						w.Map[z][x].Labels[GroupMacroHumidity] = MacroHumidityModerate
+						w.Map[z][x].Labels[GroupHumidity] = Humidity5
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// If a minimal humidity tile has at least 1 high/moderate humidity neighbor, set it as low (3)
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			if w.Map[z][x].Labels[GroupMacroHumidity] == MacroHumidityMinimal {
+				// Get the current coordinate
+				current := coord.NewCoord(z, x)
+
+				// Get all 8 neighbors of the current coordinate
+				neighborsCoords := coord.ConcatenateCoordSlices(
+					current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1),
+					current.GetDiagonalNeighbors(w.Data.Length-1, w.Data.Width-1),
+				)
+
+				// Check if at least 1 neighbor is high/moderate humidity, if so, set the current as low (3)
+				for _, neighbor := range neighborsCoords {
+					if w.Map[neighbor.Z][neighbor.X].Labels[GroupMacroHumidity] == MacroHumidityHigh || w.Map[neighbor.Z][neighbor.X].Labels[GroupMacroHumidity] == MacroHumidityModerate {
+						w.Map[z][x].Labels[GroupMacroHumidity] = MacroHumidityLow
+						w.Map[z][x].Labels[GroupHumidity] = Humidity3
+						break
+					}
+				}
+			}
+		}
+	}
 
 	// Update the world map
-	*worldMatrixPtr = worldMatrix
+	*worldPtr = w
 }
 
-func AddAltitudes(worldMatrixPtr *WorldMatrix) {
+func AddOceanAltitudes(worldPtr *World) {
 	// Retrieve the world map
-	worldMatrix := *worldMatrixPtr
+	w := *worldPtr
 
-	// Add altitudes to the world map
-	// TODO: Implement AddAltitudes
+	// Each tile of water is set with label DepthHigh if all 8 neighbors are water, otherwise DepthLow
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			if w.Map[z][x].Labels[GroupCategory] == CategoryOcean {
+				// Get the current coordinate
+				current := coord.NewCoord(z, x)
+
+				// Get all 8 neighbors of the current coordinate
+				neighborsCoords := coord.ConcatenateCoordSlices(
+					current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1),
+					current.GetDiagonalNeighbors(w.Data.Length-1, w.Data.Width-1),
+				)
+
+				// Check if all the neighbors are water, if so, set the current as DepthHigh
+				allWater := true
+				for _, neighbor := range neighborsCoords {
+					if w.Map[neighbor.Z][neighbor.X].Labels[GroupCategory] != CategoryOcean {
+						allWater = false
+						break
+					}
+				}
+				if allWater {
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthHigh
+					w.Map[z][x].Labels[GroupAltitude] = Depth1
+				} else {
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthLow
+					w.Map[z][x].Labels[GroupAltitude] = Depth0
+				}
+			}
+		}
+	}
+}
+
+func AddAltitudes(worldPtr *World) {
+	// Retrieve the world map
+	w := *worldPtr
+
+	// Calculate the altitude levels of the world map based on the altitude noise map
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			if w.Map[z][x].Labels[GroupCategory] == CategoryLand {
+				// Convert the range value from [-1, 1] to [0, 10]
+				w.Altitude.ScalePixel(z, x, 0, 10)
+
+				// Set the altitude of the world map tile based on the altitude noise map
+				switch {
+				case w.Altitude.Map[z][x] >= 9.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightVeryHigh
+					w.Map[z][x].Labels[GroupAltitude] = Height9
+				case w.Altitude.Map[z][x] >= 8.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightHigh
+					w.Map[z][x].Labels[GroupAltitude] = Height8
+				case w.Altitude.Map[z][x] >= 7.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightHigh
+					w.Map[z][x].Labels[GroupAltitude] = Height7
+				case w.Altitude.Map[z][x] >= 6.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
+					w.Map[z][x].Labels[GroupAltitude] = Height6
+				case w.Altitude.Map[z][x] >= 5.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
+					w.Map[z][x].Labels[GroupAltitude] = Height5
+				case w.Altitude.Map[z][x] >= 4.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
+					w.Map[z][x].Labels[GroupAltitude] = Height4
+				case w.Altitude.Map[z][x] >= 3.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightLow
+					w.Map[z][x].Labels[GroupAltitude] = Height3
+				case w.Altitude.Map[z][x] >= 2.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightLow
+					w.Map[z][x].Labels[GroupAltitude] = Height2
+				case w.Altitude.Map[z][x] >= 1.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightLow
+					w.Map[z][x].Labels[GroupAltitude] = Height1
+				case w.Altitude.Map[z][x] >= 0.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightLow
+					w.Map[z][x].Labels[GroupAltitude] = Height0
+				}
+			}
+		}
+	}
 
 	// Update the world map
-	*worldMatrixPtr = worldMatrix
+	*worldPtr = w
 }
 
-func AddVaraints(worldMatrixPtr *WorldMatrix) {
+func AddVariants(worldPtr *World) {
 	// Retrieve the world map
-	worldMatrix := *worldMatrixPtr
+	w := *worldPtr
 
 	// Add variants to the world map
-	// TODO: Implement AddVaraints
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			// Convert the range value from [0, 1] to [0, 13]
+			w.Variants.ScalePixel(z, x, 0, 13)
+
+			// Set the variant of the world map tile based on the variant noise map
+			if w.Variants.Map[z][x] >= 12.0 {
+				w.Map[z][x].Labels[GroupVariant] = VariantSpecial
+			}
+		}
+	}
 
 	// Update the world map
-	*worldMatrixPtr = worldMatrix
+	*worldPtr = w
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/MoraGames/warld/noiseMap"
 	"github.com/MoraGames/warld/seed"
+	"github.com/MoraGames/warld/world"
 )
 
 var (
@@ -31,7 +32,13 @@ func main() {
 	fmt.Printf("World seed: %v | World rand: %v\n", WorldSeeder.GetSeed().Token, WorldSeeder.Random)
 	// TODO: Implement main()
 
-	testingNoiseMaps()
+	//testingNoiseMaps()
+	t0_wc := time.Now()
+	w := world.Create(512, 12, 512, WorldSeeder)
+	t1_wc := time.Now()
+	fmt.Println(w.String(true))
+	t2_wc := time.Now()
+	fmt.Printf("\nworld %v (%vx%v) created in %v (and printed in %v)\n", WorldSeeder.GetSeed().Token, w.Data.Length, w.Data.Width, t1_wc.Sub(t0_wc), t2_wc.Sub(t1_wc))
 }
 
 func testingNoiseMaps() {

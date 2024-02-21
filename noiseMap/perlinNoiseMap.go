@@ -22,8 +22,8 @@ type (
 	}
 )
 
-func NewPerlinNoiseMap(width, height, octaves int, gridSize float64, seeder *seed.Seeder) PerlinNoiseMap {
-	values := make([][]float64, height)
+func NewPerlinNoiseMap(width, length, octaves int, gridSize float64, seeder *seed.Seeder) PerlinNoiseMap {
+	values := make([][]float64, length)
 	for i := range values {
 		values[i] = make([]float64, width)
 		for j := range values[i] {
@@ -89,6 +89,11 @@ func newRandomVector(x, y int, seeder *seed.Seeder) randomVector {
 	uX *= 2048419325134134313
 	random := float64(uX) * (math.Pi / float64(^uint64(0)>>1)) // in [0, 2*Pi]
 	return randomVector{x: math.Cos(random), y: math.Sin(random)}
+}
+
+func (pnm *PerlinNoiseMap) ScalePixel(z, x int, min, max float64) float64 {
+	pnm.Map[z][x] = (((pnm.Map[z][x] + 1.0) / 2.0) * (max - min)) + min
+	return pnm.Map[z][x]
 }
 
 func (pnm *PerlinNoiseMap) String() string {
