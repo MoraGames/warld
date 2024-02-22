@@ -66,13 +66,13 @@ const (
 	GroupAltitude LabelGroup = "Group Altitude"
 
 	Height9 Label = "Height 9" // Height Very High
-	Height8 Label = "Height 8" // Height High
+	Height8 Label = "Height 8" // Height Very High
 	Height7 Label = "Height 7" // Height High
-	Height6 Label = "Height 6" // Height Medium
-	Height5 Label = "Height 5" // Height Medium
+	Height6 Label = "Height 6" // Height High
+	Height5 Label = "Height 5" // Height High
 	Height4 Label = "Height 4" // Height Medium
-	Height3 Label = "Height 3" // Height Low
-	Height2 Label = "Height 2" // Height Low
+	Height3 Label = "Height 3" // Height Medium
+	Height2 Label = "Height 2" // Height Medium
 	Height1 Label = "Height 1" // Height Low
 	Height0 Label = "Height 0" // Height Low
 	Depth0  Label = "Depth 0"  // Depth Low

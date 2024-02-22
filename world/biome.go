@@ -2,9 +2,12 @@ package world
 
 import (
 	"fmt"
+	"image/color"
+	"math"
 	"strings"
 
 	"github.com/MoraGames/warld/seed"
+	colorStyle "github.com/gookit/color"
 )
 
 var (
@@ -75,6 +78,23 @@ func BiomesList() []Biome {
 	}
 }
 
+func BiomesLegend() string {
+	str := "\n>> Biomes Legend:\n"
+
+	list := BiomesList()
+	even := len(list)%2 == 0
+	half := int(math.Round(float64(len(list)) / 2.0))
+	for i := 0; i < half; i++ {
+		if !even && i == half-1 {
+			str += fmt.Sprintf("  %25s %s  |    \n", list[i].Name, colorStyle.NewRGBStyle(colorStyle.HEX("222222"), colorStyle.HEX(list[i].Color)).Sprint(" "))
+			continue
+		}
+		str += fmt.Sprintf("  %25s %s  |  %s %-25s  \n", list[i].Name, colorStyle.NewRGBStyle(colorStyle.HEX("222222"), colorStyle.HEX(list[i].Color)).Sprint(" "), colorStyle.NewRGBStyle(colorStyle.HEX("222222"), colorStyle.HEX(list[i+half].Color)).Sprint(" "), list[i+half].Name)
+	}
+
+	return str
+}
+
 func NewBiome(name, color string) (Biome, error) {
 	if strings.TrimSpace(name) == "" {
 		return BiomeError, fmt.Errorf("Invalid name: name is empty")
@@ -91,6 +111,22 @@ func NewBiome(name, color string) (Biome, error) {
 
 func (b Biome) String() string {
 	return b.Name + " (" + b.Color + ")"
+}
+
+func (b Biome) RGBAColor() (color.RGBA, error) {
+	if len(b.Color) != 7 && b.Color[0] != '#' {
+		return color.RGBA{}, fmt.Errorf("invalid length, must be 7 and start with #")
+	}
+
+	var c color.RGBA
+	c.A = 0xff
+
+	_, err := fmt.Sscanf(b.Color, "#%02x%02x%02x", &c.R, &c.G, &c.B)
+	if err != nil {
+		return color.RGBA{}, err
+	}
+
+	return c, nil
 }
 
 // Ocean [Category, Temperature, Altitude]
