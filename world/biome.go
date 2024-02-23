@@ -19,7 +19,12 @@ var (
 	BiomeWarmDeepOcean      = Biome{"Warm Deep Ocean", "#00CAD8"}
 	BiomeTemperateDeepOcean = Biome{"Temperate Deep Ocean", "#00B3E4"}
 	BiomeColdDeepOcean      = Biome{"Cold Deep Ocean", "#0094F1"}
-	BiomeFrozenDeepOcean    = Biome{"Frozen Deep Ocean", "#BEFAFF"}
+	BiomeFrozenDeepOcean    = Biome{"Frozen Deep Ocean", "#B5F9FF"}
+
+	BiomeWarmRiver      = Biome{"Warm River", "#1EE1F0"}
+	BiomeTemperateRiver = Biome{"Temperate River", "#28C8F5"}
+	BiomeColdRiver      = Biome{"Cold River", "#32AFFA"}
+	BiomeFrozenRiver    = Biome{"Frozen River", "#D6FFFF"}
 
 	BiomeDesert       = Biome{"Desert", "#FFF08C"}
 	BiomeSavanna      = Biome{"Savanna", "#CCD043"}
@@ -58,6 +63,10 @@ func BiomesList() []Biome {
 		BiomeTemperateDeepOcean,
 		BiomeColdDeepOcean,
 		BiomeFrozenDeepOcean,
+		BiomeWarmRiver,
+		BiomeTemperateRiver,
+		BiomeColdRiver,
+		BiomeFrozenRiver,
 		BiomeDesert,
 		BiomeSavanna,
 		BiomePlains,
@@ -179,17 +188,18 @@ func GenerateBiome(labels map[LabelGroup]Label, seeder *seed.Seeder) (Biome, err
 		case Depth1:
 			switch macroTemperature {
 			case MacroTemperatureWarm:
-				biome = BiomeWarmOcean
+				biome = BiomeWarmDeepOcean
 			case MacroTemperatureTemperate:
-				biome = BiomeTemperateOcean
+				biome = BiomeTemperateDeepOcean
 			case MacroTemperatureCold:
-				biome = BiomeColdOcean
+				biome = BiomeColdDeepOcean
 			case MacroTemperatureFreezing:
-				biome = BiomeFrozenOcean
+				biome = BiomeFrozenDeepOcean
 			default:
-				biome = BiomeTemperateOcean
+				biome = BiomeTemperateDeepOcean
 			}
 		default:
+			//fmt.Printf("DEPTH NOT FOUND (%v | %v)    - ", altitude, macroAltitude)
 			switch macroTemperature {
 			case MacroTemperatureWarm:
 				biome = BiomeWarmOcean
@@ -202,6 +212,19 @@ func GenerateBiome(labels map[LabelGroup]Label, seeder *seed.Seeder) (Biome, err
 			default:
 				biome = BiomeTemperateOcean
 			}
+		}
+	case CategoryRiver:
+		switch macroTemperature {
+		case MacroTemperatureWarm:
+			biome = BiomeWarmRiver
+		case MacroTemperatureTemperate:
+			biome = BiomeTemperateRiver
+		case MacroTemperatureCold:
+			biome = BiomeColdRiver
+		case MacroTemperatureFreezing:
+			biome = BiomeFrozenRiver
+		default:
+			biome = BiomeTemperateRiver
 		}
 	case CategoryLand:
 		switch macroAltitude {
@@ -266,7 +289,7 @@ func GenerateBiome(labels map[LabelGroup]Label, seeder *seed.Seeder) (Biome, err
 				case Humidity1:
 					biome = BiomeSavanna
 				case Humidity0:
-					biome = BiomeSavanna
+					biome = BiomeDesert
 				}
 			case Temperature4:
 				switch humidity {
@@ -279,7 +302,7 @@ func GenerateBiome(labels map[LabelGroup]Label, seeder *seed.Seeder) (Biome, err
 				case Humidity4:
 					biome = BiomeOakForest
 				case Humidity3:
-					biome = BiomeOakForest
+					biome = BiomePlains
 				case Humidity2:
 					biome = BiomePlains
 				case Humidity1:
@@ -317,7 +340,7 @@ func GenerateBiome(labels map[LabelGroup]Label, seeder *seed.Seeder) (Biome, err
 				case Humidity4:
 					biome = BiomeSpruceForest
 				case Humidity3:
-					biome = BiomeOakForest
+					biome = BiomeSpruceForest
 				case Humidity2:
 					biome = BiomePlains
 				case Humidity1:
@@ -375,6 +398,7 @@ func GenerateBiome(labels map[LabelGroup]Label, seeder *seed.Seeder) (Biome, err
 		case MacroHeightVeryHigh:
 			biome = BiomeSnowyMountains
 		default:
+			//fmt.Printf("MACRO ALTITUDE NOT FOUND (%v)", macroAltitude)
 			switch temperature {
 			case Temperature7:
 				switch humidity {

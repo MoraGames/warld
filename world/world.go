@@ -29,6 +29,7 @@ type (
 		Humidity        noiseMap.PerlinNoiseMap
 		Continentalness noiseMap.PerlinNoiseMap
 		Altitude        noiseMap.PerlinNoiseMap
+		Rivers          noiseMap.PerlinNoiseMap
 		Variants        noiseMap.WhiteNoiseMap
 	}
 )
@@ -121,11 +122,15 @@ func Create(worldWidth, worldHeight, worldLength int, seeder *seed.Seeder) *Worl
 
 	AdjustVariantsAltitudes(worldPtr)
 	fmt.Println("[DEBUG] > AdjustVariantsAltitudes() done")
+	AddRivers(worldPtr)
+	fmt.Println("[DEBUG] > AddRivers() done")
 
 	// Update the biomes
 	for z := 0; z < worldPtr.Data.Length; z++ {
 		for x := 0; x < worldPtr.Data.Width; x++ {
+			//fmt.Printf("[DEBUG] > Updating biome [%v %v]: ", z, x)
 			worldPtr.Map[z][x].UpdateBiome(worldPtr.Seeder)
+			//fmt.Println()
 		}
 	}
 	fmt.Println("[DEBUG] > Biomes updated")
@@ -174,6 +179,9 @@ func (w *World) Print(withLegend bool) {
 func (w *World) Image(path string) {
 	var text string
 
+	wdO, tdO, cdO, fdO := 0, 0, 0, 0
+	wlO, tlO, clO, flO := 0, 0, 0, 0
+
 	width, height := len(w.Map[0]), len(w.Map)
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	for y := 0; y < height; y++ {
@@ -189,6 +197,57 @@ func (w *World) Image(path string) {
 				panic(err)
 			}
 			img.Set(x, y, c)
+
+			if w.Map[y][x].Labels[GroupCategory] == CategoryOcean {
+				switch w.Map[y][x].Labels[GroupMacroAltitude] {
+				case MacroDepthLow:
+					switch w.Map[y][x].Labels[GroupMacroTemperature] {
+					case MacroTemperatureWarm:
+						if wlO == 0 {
+							fmt.Printf("[DEBUG] > Warm Low  [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
+						}
+						wlO++
+					case MacroTemperatureTemperate:
+						if tlO == 0 {
+							fmt.Printf("[DEBUG] > Temp Low  [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
+						}
+						tlO++
+					case MacroTemperatureCold:
+						if clO == 0 {
+							fmt.Printf("[DEBUG] > Cold Low  [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
+						}
+						clO++
+					case MacroTemperatureFreezing:
+						if flO == 0 {
+							fmt.Printf("[DEBUG] > Frez Low  [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
+						}
+						flO++
+					}
+				case MacroDepthHigh:
+					switch w.Map[y][x].Labels[GroupMacroTemperature] {
+					case MacroTemperatureWarm:
+						if wdO == 0 {
+							fmt.Printf("[DEBUG] > Warm Deep [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
+						}
+						wdO++
+					case MacroTemperatureTemperate:
+						if tdO == 0 {
+							fmt.Printf("[DEBUG] > Temp Deep [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
+						}
+						tdO++
+					case MacroTemperatureCold:
+						if cdO == 0 {
+							fmt.Printf("[DEBUG] > Cold Deep [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
+						}
+						cdO++
+					case MacroTemperatureFreezing:
+						if fdO == 0 {
+							fmt.Printf("[DEBUG] > Frez Deep [%v %v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
+						}
+						fdO++
+					}
+				}
+			}
 		}
 		if GlobalDebugMode {
 			text += "\n"
@@ -359,4 +418,16 @@ func (w *World) PrintDebugInfos() {
 	fmt.Printf("  - Minimal Humidity: %v | Low Humidity: %v | Moderate Humidity: %v | High Humidity: %v\n", minimalHumidityLandsNum, lowHumidityLandsNum, moderateHumidityLandsNum, highHumidityLandsNum)
 	fmt.Printf("  - Normal: %v | Collinar: %v | Special: %v\n", normalLandsNum, collinarLandsNum, specialLandsNum)
 	fmt.Printf("  - Desert: %v | Savanna: %v | Plains: %v | Swamp: %v | Jungle Forest: %v | Bamboo Forest: %v | Oak Forest: %v | Birch Forest: %v | Spruce Forest: %v | Snowy Taiga: %v | Snowy Tundra: %v | Ice Spikes: %v | Mountains: %v | Snowy Mountains: %v\n", desertBiomesNum, savannaBiomesNum, plainsBiomesNum, swampBiomesNum, jungleForestBiomesNum, bambooForestBiomesNum, oakForestBiomesNum, birchForestBiomesNum, spruceForestBiomesNum, snowyTaigaBiomesNum, snowyTundraBiomesNum, iceSpikesBiomesNum, mountainsBiomesNum, snowyMountainsBiomesNum)
+}
+
+func StringToFile(text, path string) {
+	file, err := os.Create(fmt.Sprintf(path, PathFilesNumber))
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString(text); err != nil {
+		panic(err)
+	}
 }

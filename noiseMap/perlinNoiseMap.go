@@ -27,6 +27,7 @@ type (
 func NewPerlinNoiseMap(width, length int, frequency, amplitude, lacunarity, persistence float64, octaves int, seeder *seed.Seeder) PerlinNoiseMap {
 	noisemapSeed := seeder.Random.Uint64()
 	values := make([][]float64, length)
+	min, max := math.MaxFloat64, math.SmallestNonzeroFloat64
 	for i := range values {
 		values[i] = make([]float64, width)
 		for j := range values[i] {
@@ -42,9 +43,16 @@ func NewPerlinNoiseMap(width, length int, frequency, amplitude, lacunarity, pers
 				ampl *= persistence
 			}
 			values[i][j] = value
+
+			if value < min {
+				min = value
+			}
+			if value > max {
+				max = value
+			}
 		}
 	}
-	return PerlinNoiseMap{CurrentScale: ScaleRange{-1, 1}, Map: values}
+	return PerlinNoiseMap{CurrentScale: ScaleRange{min, max}, Map: values}
 }
 
 func perlinValue(x, y float64, noisemapSeed uint64) float64 {

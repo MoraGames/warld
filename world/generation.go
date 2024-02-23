@@ -32,6 +32,7 @@ func InitializeWorld(worldWidth, worldHeight, worldLength int, seeder *seed.Seed
 		Humidity:        noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 0.02, 1.0, 2.0, 0.5, 8, seeder),
 		Continentalness: noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 0.01, 1.0, 2.0, 0.5, 8, seeder),
 		Altitude:        noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 0.015, 1.0, 2.0, 0.5, 8, seeder),
+		Rivers:          noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 0.030, 3.5, 1.0, 0.2, 2, seeder),
 		Variants:        noiseMap.NewWhiteNoiseMap(worldWidth, worldLength, seeder),
 	}
 
@@ -40,6 +41,7 @@ func InitializeWorld(worldWidth, worldHeight, worldLength int, seeder *seed.Seed
 	w.Humidity.Image("./noiseMap/runImages/humidity_original%v.png")
 	w.Continentalness.Image("./noiseMap/runImages/continentalness_original%v.png")
 	w.Altitude.Image("./noiseMap/runImages/altitude_original%v.png")
+	w.Rivers.Image("./noiseMap/runImages/rivers_original%v.png")
 	w.Variants.Image("./noiseMap/runImages/variants_original%v.png")
 	fmt.Println("[DEBUG] > > Noisemap images saved")
 
@@ -82,8 +84,8 @@ func worldMatrixFirstIteration(worldPtr *World) {
 			}
 
 			// Set the typology of the world map tile based on the continentalness noise map
-			// 8/15 of the world map is land
-			if w.Continentalness.Map[z][x] > (newScale.Max - 8.0) {
+			// 19/30 (= 9.5/15) of the world map is land
+			if w.Continentalness.Map[z][x] > (newScale.Max - 9.5) {
 				w.Map[z][x].Labels[GroupCategory] = CategoryLand
 				landsNum++
 			} else {
@@ -430,51 +432,79 @@ func AddHumidity(worldPtr *World) {
 	*worldPtr = w
 }
 
-func AddOceanAltitudes(worldPtr *World) {
-	// Retrieve the world map
+/*
+	func AddOceanAltitudes(worldPtr *World) {
+		// Retrieve the world map
+		w := *worldPtr
+
+		// Each tile of water is set with label DepthHigh if all 8 neighbors are water, otherwise DepthLow
+		for z := 0; z < w.Data.Length; z++ {
+			for x := 0; x < w.Data.Width; x++ {
+				if w.Map[z][x].Labels[GroupCategory] == CategoryOcean {
+					// Get the current coordinate
+					current := coord.NewCoord(z, x)
+
+					// Get all 8 neighbors of the current coordinate
+					neighborsCoords := coord.ConcatenateCoordSlices(
+						current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1),
+						current.GetDiagonalNeighbors(w.Data.Length-1, w.Data.Width-1),
+					)
+
+					// Check if all the neighbors are water, if so, set the current as DepthHigh
+					allWater := true
+					for _, neighbor := range neighborsCoords {
+						if w.Map[neighbor.Z][neighbor.X].Labels[GroupCategory] != CategoryOcean {
+							allWater = false
+							break
+						}
+					}
+					if allWater {
+						w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthHigh
+						w.Map[z][x].Labels[GroupAltitude] = Depth1
+					} else {
+						w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthLow
+						w.Map[z][x].Labels[GroupAltitude] = Depth0
+					}
+				}
+			}
+		}
+
+		// Update the world map
+		*worldPtr = w
+	}
+*/
+func AddOceanAltitudes(worldPtr *World) { // Retrieve the world map
 	w := *worldPtr
 
-	// Each tile of water is set with label DepthHigh if all 8 neighbors are water, otherwise DepthLow
+	// Calculate the altitude levels of the world map based on the continentalness noise map
 	for z := 0; z < w.Data.Length; z++ {
 		for x := 0; x < w.Data.Width; x++ {
 			if w.Map[z][x].Labels[GroupCategory] == CategoryOcean {
-				// Get the current coordinate
-				current := coord.NewCoord(z, x)
-
-				// Get all 8 neighbors of the current coordinate
-				neighborsCoords := coord.ConcatenateCoordSlices(
-					current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1),
-					current.GetDiagonalNeighbors(w.Data.Length-1, w.Data.Width-1),
-				)
-
-				// Check if all the neighbors are water, if so, set the current as DepthHigh
-				allWater := true
-				for _, neighbor := range neighborsCoords {
-					if w.Map[neighbor.Z][neighbor.X].Labels[GroupCategory] != CategoryOcean {
-						allWater = false
-						break
-					}
-				}
-				if allWater {
-					w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthHigh
+				if w.Continentalness.Map[z][x] <= (w.Continentalness.CurrentScale.Max-9.5)-2.0 {
 					w.Map[z][x].Labels[GroupAltitude] = Depth1
-				} else {
-					w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthLow
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthHigh
+				} else { // <= (w.Continentalness.CurrentScale.Max - 9.5)
 					w.Map[z][x].Labels[GroupAltitude] = Depth0
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthLow
 				}
 			}
 		}
 	}
+
+	// Update the world map
+	*worldPtr = w
 }
 
 func AddAltitudes(worldPtr *World) {
 	// Retrieve the world map
 	w := *worldPtr
 
+	var altitudeString string
+
 	// Calculate the altitude levels of the world map based on the altitude noise map
 	oceansNum, landsNum := 0, 0
 	minValBS, maxValBS, minValAS, maxValAS := math.MaxFloat64, math.SmallestNonzeroFloat64, math.MaxFloat64, math.SmallestNonzeroFloat64
-	newScale := noiseMap.ScaleRange{Min: 0, Max: 10}
+	newScale := noiseMap.ScaleRange{Min: 0, Max: 15}
 	for z := 0; z < w.Data.Length; z++ {
 		for x := 0; x < w.Data.Width; x++ {
 			if w.Map[z][x].Labels[GroupCategory] == CategoryLand {
@@ -486,7 +516,7 @@ func AddAltitudes(worldPtr *World) {
 					maxValBS = w.Altitude.Map[z][x]
 				}
 
-				// Convert the range value from [-1, 1] to [0, 10]
+				// Convert the range value from [-1, 1] to [0, 15]
 				w.Altitude.ScalePixel(coord.Coord{X: x, Z: z}, w.Altitude.CurrentScale, newScale)
 
 				if w.Altitude.Map[z][x] < minValAS {
@@ -498,29 +528,47 @@ func AddAltitudes(worldPtr *World) {
 
 				// Set the altitude of the world map tile based on the altitude noise map
 				switch {
-				case w.Altitude.Map[z][x] >= 9.0:
+				case w.Altitude.Map[z][x] == 15.0:
 					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightVeryHigh
+					w.Map[z][x].Labels[GroupAltitude] = Height15
+				case w.Altitude.Map[z][x] >= 14.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightVeryHigh
+					w.Map[z][x].Labels[GroupAltitude] = Height14
+				case w.Altitude.Map[z][x] >= 13.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightVeryHigh
+					w.Map[z][x].Labels[GroupAltitude] = Height13
+				case w.Altitude.Map[z][x] >= 12.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightVeryHigh
+					w.Map[z][x].Labels[GroupAltitude] = Height12
+				case w.Altitude.Map[z][x] >= 11.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightHigh
+					w.Map[z][x].Labels[GroupAltitude] = Height11
+				case w.Altitude.Map[z][x] >= 10.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightHigh
+					w.Map[z][x].Labels[GroupAltitude] = Height10
+				case w.Altitude.Map[z][x] >= 9.0:
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
 					w.Map[z][x].Labels[GroupAltitude] = Height9
 				case w.Altitude.Map[z][x] >= 8.0:
-					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightVeryHigh
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
 					w.Map[z][x].Labels[GroupAltitude] = Height8
 				case w.Altitude.Map[z][x] >= 7.0:
-					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightHigh
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
 					w.Map[z][x].Labels[GroupAltitude] = Height7
 				case w.Altitude.Map[z][x] >= 6.0:
-					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightHigh
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
 					w.Map[z][x].Labels[GroupAltitude] = Height6
 				case w.Altitude.Map[z][x] >= 5.0:
-					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightHigh
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
 					w.Map[z][x].Labels[GroupAltitude] = Height5
 				case w.Altitude.Map[z][x] >= 4.0:
-					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightLow
 					w.Map[z][x].Labels[GroupAltitude] = Height4
 				case w.Altitude.Map[z][x] >= 3.0:
-					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightLow
 					w.Map[z][x].Labels[GroupAltitude] = Height3
 				case w.Altitude.Map[z][x] >= 2.0:
-					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
+					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightLow
 					w.Map[z][x].Labels[GroupAltitude] = Height2
 				case w.Altitude.Map[z][x] >= 1.0:
 					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightLow
@@ -529,16 +577,36 @@ func AddAltitudes(worldPtr *World) {
 					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightLow
 					w.Map[z][x].Labels[GroupAltitude] = Height0
 				}
+
+				// Debug print
+				val, err := worldPtr.Map[z][x].Labels[GroupAltitude].Value()
+				if err != nil {
+					fmt.Println(err)
+					altitudeString += "?"
+					continue
+				}
+				altitudeString += fmt.Sprintf("%X", val)
 			} else {
 				oceansNum++
+
+				// Debug print
+				switch worldPtr.Map[z][x].Labels[GroupMacroAltitude] {
+				case MacroDepthHigh:
+					altitudeString += "-"
+				case MacroDepthLow:
+					altitudeString += " "
+				}
 
 				// Burn the value (convert the range value from [-1, 1] to [0, 0])
 				w.Altitude.ScalePixel(coord.Coord{X: x, Z: z}, w.Altitude.CurrentScale, noiseMap.ScaleRange{Min: 0, Max: 0})
 			}
 		}
+		altitudeString += "\n"
 	}
 	w.Altitude.CurrentScale = newScale
 	noiseMap.PNMScalePixelDebugPrintTimes = 0
+
+	StringToFile(altitudeString, "./noiseMap/runImages/altitudeA%v.txt")
 
 	fmt.Printf("[DEBUG] > > > Oceans: %v/%v | Lands: %v/%v\n", oceansNum, w.Data.Length*w.Data.Width, landsNum, w.Data.Length*w.Data.Width)
 	fmt.Printf("[DEBUG] > > > Altitude registered range: [%v, %v] | Scaled registered range: [%v, %v]\n", minValBS, maxValBS, minValAS, maxValAS)
@@ -550,6 +618,8 @@ func AddAltitudes(worldPtr *World) {
 func AdjustVariantsAltitudes(worldPtr *World) {
 	// Retrieve the world map
 	w := *worldPtr
+
+	var altitudeString string
 
 	// Transform special plains into collinar plains
 	for z := 0; z < w.Data.Length; z++ {
@@ -566,20 +636,51 @@ func AdjustVariantsAltitudes(worldPtr *World) {
 						worldPtr.Map[z][x].Labels[GroupAltitude] = Height1
 					case Height1:
 						worldPtr.Map[z][x].Labels[GroupAltitude] = Height2
-						worldPtr.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
 					case Height2:
 						worldPtr.Map[z][x].Labels[GroupAltitude] = Height3
 					case Height3:
 						worldPtr.Map[z][x].Labels[GroupAltitude] = Height4
+						worldPtr.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightMedium
 					case Height4:
-						// In this case becomes a Mountains biome
 						worldPtr.Map[z][x].Labels[GroupAltitude] = Height5
+					case Height5:
+						worldPtr.Map[z][x].Labels[GroupAltitude] = Height6
+					case Height6:
+						worldPtr.Map[z][x].Labels[GroupAltitude] = Height7
+					case Height7:
+						worldPtr.Map[z][x].Labels[GroupAltitude] = Height8
+					case Height8:
+						worldPtr.Map[z][x].Labels[GroupAltitude] = Height9
+					case Height9:
+						// In this case becomes a Mountains biome
+						worldPtr.Map[z][x].Labels[GroupAltitude] = Height10
 						worldPtr.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightHigh
 					}
 				}
 			}
+
+			// Debug print
+			if worldPtr.Map[z][x].Labels[GroupCategory] == CategoryLand {
+				val, err := worldPtr.Map[z][x].Labels[GroupAltitude].Value()
+				if err != nil {
+					fmt.Println(err)
+					altitudeString += "?"
+					continue
+				}
+				altitudeString += fmt.Sprintf("%X", val)
+			} else {
+				switch worldPtr.Map[z][x].Labels[GroupMacroAltitude] {
+				case MacroDepthHigh:
+					altitudeString += "-"
+				case MacroDepthLow:
+					altitudeString += " "
+				}
+			}
 		}
+		altitudeString += "\n"
 	}
+
+	StringToFile(altitudeString, "./noiseMap/runImages/altitudeB%v.txt")
 
 	// Update the world map
 	*worldPtr = w
@@ -604,6 +705,74 @@ func AddVariants(worldPtr *World) {
 	}
 	w.Variants.CurrentScale = newScale
 	noiseMap.WNMScalePixelDebugPrintTimes = 0
+
+	// Update the world map
+	*worldPtr = w
+}
+
+func AddRivers(worldPtr *World) {
+	// Retrieve the world map
+	w := *worldPtr
+
+	minB, maxB, minA, maxA := math.MaxFloat64, math.SmallestNonzeroFloat64, math.MaxFloat64, math.SmallestNonzeroFloat64
+	minABS, maxABS := math.MaxFloat64, math.SmallestNonzeroFloat64
+	riversNoiseMapCopy := w.Rivers
+
+	// Add rivers to the world map based on the river noise map
+	newScale := noiseMap.ScaleRange{Min: -15, Max: 15}
+	fmt.Printf("[DEBUG] > > > Current range and new range: %+v => %+v\n", w.Rivers.CurrentScale, newScale)
+	for z := 0; z < w.Data.Length; z++ {
+		for x := 0; x < w.Data.Width; x++ {
+			if w.Rivers.Map[z][x] < minB {
+				minB = w.Rivers.Map[z][x]
+			}
+			if w.Rivers.Map[z][x] > maxB {
+				maxB = w.Rivers.Map[z][x]
+			}
+
+			// Convert the range value from [-1, 1] to [-15, 15]
+			w.Rivers.ScalePixel(coord.Coord{X: x, Z: z}, w.Rivers.CurrentScale, newScale)
+
+			if w.Rivers.Map[z][x] < minA {
+				minA = w.Rivers.Map[z][x]
+			}
+			if w.Rivers.Map[z][x] > maxA {
+				maxA = w.Rivers.Map[z][x]
+			}
+
+			// Make the river noise map equal to the absolute value of it's self
+			w.Rivers.Map[z][x] = math.Abs(w.Rivers.Map[z][x])
+
+			if w.Rivers.Map[z][x] < minABS {
+				minABS = w.Rivers.Map[z][x]
+			}
+			if w.Rivers.Map[z][x] > maxABS {
+				maxABS = w.Rivers.Map[z][x]
+			}
+
+			// Filter the river noise map
+			if w.Rivers.Map[z][x] <= 0.5 {
+				if w.Map[z][x].Labels[GroupCategory] == CategoryLand {
+					if w.Map[z][x].Labels[GroupMacroAltitude] == MacroHeightLow || w.Map[z][x].Labels[GroupMacroAltitude] == MacroHeightMedium || w.Map[z][x].Labels[GroupAltitude] == Height10 {
+						w.Map[z][x].Labels[GroupCategory] = CategoryRiver
+					} else {
+						riversNoiseMapCopy.Map[z][x] = 15.0
+					}
+				} else {
+					riversNoiseMapCopy.Map[z][x] = 15.0
+				}
+			} else {
+				riversNoiseMapCopy.Map[z][x] = 15.0
+			}
+		}
+	}
+	w.Rivers.CurrentScale = newScale
+	noiseMap.PNMScalePixelDebugPrintTimes = 0
+
+	fmt.Printf("[DEBUG] > > > Rivers registered range: [%v, %v] | Scaled registered range: [%v, %v]\n", minB, maxB, minA, maxA)
+	fmt.Printf("[DEBUG] > > > Rivers absoluted range: [%v, %v]", minABS, maxABS)
+
+	w.Rivers.Image("./noiseMap/runImages/rivers_edited%v.png")
 
 	// Update the world map
 	*worldPtr = w

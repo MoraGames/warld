@@ -41,7 +41,7 @@ func main() {
 
 	t0_wc := time.Now()
 
-	testingNoiseMaps()
+	//testingNoiseMaps()
 	t1_wc := time.Now()
 
 	w := world.Create(512, 12, 512, WorldSeeder)
