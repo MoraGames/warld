@@ -1,3 +1,5 @@
+github.com/MoraGames/terminal v0.0.0-20220103020759-6a1c9a408865 h1:T26U+gsNlQ225ia+v/VWBKGWQWVM/wiLIy2gT887tow=
+github.com/MoraGames/terminal v0.0.0-20220103020759-6a1c9a408865/go.mod h1:O/WojO9+ArzwTyz1OkWQnnY8xFRG28Y3mFBvNjvHTWI=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/gookit/color v1.5.4 h1:FZmqs7XOyGgCAxmWyPslpiok1k05wmY3SJTytgvYFs0=

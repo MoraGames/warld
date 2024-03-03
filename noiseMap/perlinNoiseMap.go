@@ -104,8 +104,8 @@ func newRandomVector(x, y int, noisemapSeed uint64) randomVector {
 
 func (pnm *PerlinNoiseMap) ScalePixel(pixel coord.Coord, from, to ScaleRange) {
 	if PNMScalePixelDebugPrintTimes < 3 {
-		fmt.Printf("[DEBUG] > > > Scaling pixel [%v][%v] from %+v to %+v\n", pixel.Z, pixel.X, from, to)
-		fmt.Printf("[DEBUG] > > > (((pixel + %v) / %v) * %v) + %v\n", from.Min, from.Max-from.Min, to.Max-to.Min, to.Min)
+		// fmt.Printf("[DEBUG] > > > Scaling pixel [%v][%v] from %+v to %+v\n", pixel.Z, pixel.X, from, to)
+		// fmt.Printf("[DEBUG] > > > (((pixel + %v) / %v) * %v) + %v\n", from.Min, from.Max-from.Min, to.Max-to.Min, to.Min)
 		PNMScalePixelDebugPrintTimes++
 	}
 	pnm.Map[pixel.Z][pixel.X] = pnm.ScaleCopyPixel(pixel, from, to)
@@ -131,7 +131,7 @@ func (pnm *PerlinNoiseMap) String() string {
 func (pnm *PerlinNoiseMap) Image(path string) {
 	width, height := len(pnm.Map[0]), len(pnm.Map)
 	img := image.NewGray(image.Rect(0, 0, width, height))
-	fmt.Println("[DEBUG] > > > > Image base created")
+	// fmt.Println("[DEBUG] > > > > Image base created")
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
@@ -148,7 +148,7 @@ func (pnm *PerlinNoiseMap) Image(path string) {
 			//fmt.Printf("[DEBUG] > Image pixel [%v][%v] set\n", y, x)
 		}
 	}
-	fmt.Println("[DEBUG] > > > > Image pixels setted")
+	// fmt.Println("[DEBUG] > > > > Image pixels setted")
 
 	// Save the image to a file
 	file, err := os.Create(fmt.Sprintf(path, PathFilesNumber))
@@ -161,5 +161,5 @@ func (pnm *PerlinNoiseMap) Image(path string) {
 		panic(err)
 	}
 
-	fmt.Println("[DEBUG] > > > > Image saved")
+	// fmt.Println("[DEBUG] > > > > Image saved")
 }

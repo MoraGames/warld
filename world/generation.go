@@ -32,7 +32,7 @@ func InitializeWorld(worldWidth, worldHeight, worldLength int, seeder *seed.Seed
 		Humidity:        noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 0.02, 1.0, 2.0, 0.5, 8, seeder),
 		Continentalness: noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 0.01, 1.0, 2.0, 0.5, 8, seeder),
 		Altitude:        noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 0.015, 1.0, 2.0, 0.5, 8, seeder),
-		Rivers:          noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 0.030, 3.5, 1.0, 0.2, 2, seeder),
+		Rivers:          noiseMap.NewPerlinNoiseMap(worldWidth, worldLength, 0.025, 5.0, 1.0, 0.2, 2, seeder),
 		Variants:        noiseMap.NewWhiteNoiseMap(worldWidth, worldLength, seeder),
 	}
 
@@ -47,7 +47,6 @@ func InitializeWorld(worldWidth, worldHeight, worldLength int, seeder *seed.Seed
 
 	// Generate the base world map (only oceans and continents)
 	worldMatrixFirstIteration(&w)
-	fmt.Println("[DEBUG] > > First iteration done")
 
 	// Return the world data structure as a pointer
 	return &w
@@ -58,175 +57,26 @@ func worldMatrixFirstIteration(worldPtr *World) {
 	w := *worldPtr
 
 	// Initialize the world map
-	oceansNum, landsNum := 0, 0
-	minValBS, maxValBS, minValAS, maxValAS := math.MaxFloat64, math.SmallestNonzeroFloat64, math.MaxFloat64, math.SmallestNonzeroFloat64
-	minValIndex, maxValIndex := coord.NewCoord(0, 0), coord.NewCoord(0, 0)
-	newScale := noiseMap.ScaleRange{Min: 0, Max: 15}
+	newScale := noiseMap.ScaleRange{Min: 0, Max: 30}
 	for z := 0; z < w.Data.Length; z++ {
 		for x := 0; x < w.Data.Width; x++ {
-			if w.Continentalness.Map[z][x] < minValBS {
-				minValBS = w.Continentalness.Map[z][x]
-				minValIndex = coord.NewCoord(z, x)
-			}
-			if w.Continentalness.Map[z][x] > maxValBS {
-				maxValBS = w.Continentalness.Map[z][x]
-				maxValIndex = coord.NewCoord(z, x)
-			}
-
-			// Convert the range value from [-1, 1] to [0, 15]
+			// Convert the range value from [-1, 1] to [0, 30]
 			w.Continentalness.ScalePixel(coord.Coord{X: x, Z: z}, w.Continentalness.CurrentScale, newScale)
 
-			if w.Continentalness.Map[z][x] < minValAS {
-				minValAS = w.Continentalness.Map[z][x]
-			}
-			if w.Continentalness.Map[z][x] > maxValAS {
-				maxValAS = w.Continentalness.Map[z][x]
-			}
-
 			// Set the typology of the world map tile based on the continentalness noise map
-			// 19/30 (= 9.5/15) of the world map is land
-			if w.Continentalness.Map[z][x] > (newScale.Max - 9.5) {
+			// 19/30 of the world map is land
+			if w.Continentalness.Map[z][x] > (newScale.Max - 19.0) {
 				w.Map[z][x].Labels[GroupCategory] = CategoryLand
-				landsNum++
 			} else {
 				w.Map[z][x].Labels[GroupCategory] = CategoryOcean
-				oceansNum++
 			}
 		}
 	}
+
+	// Update the continentalness noisemap scale
 	w.Continentalness.CurrentScale = newScale
-	noiseMap.PNMScalePixelDebugPrintTimes = 0
-
-	fmt.Printf("[DEBUG] > > > Oceans: %v/%v | Lands: %v/%v\n", oceansNum, w.Data.Length*w.Data.Width, landsNum, w.Data.Length*w.Data.Width)
-	fmt.Printf("[DEBUG] > > > Continentalness registered range: [%v, %v] | Scaled registered range: [%v, %v]\n", minValBS, maxValBS, minValAS, maxValAS)
-	fmt.Printf("[DEBUG] > > > Continentalness scale operation on min/max values:\n   From %v (index %v) ==> To %v\n   From %v (index %v) ==> To %v\n", minValBS, minValIndex, w.Continentalness.Map[minValIndex.Z][minValIndex.X], maxValBS, maxValIndex, w.Continentalness.Map[maxValIndex.Z][maxValIndex.X])
 
 	// Update the world
-	*worldPtr = w
-}
-
-func ZoomWorld(worldPtr *World) {
-	// Retrieve the world
-	w := *worldPtr
-
-	// Zoom the world map (each tile becomes 2x2 tiles)
-	worldMatrix := make(WorldMatrix, worldPtr.Data.Length*2)
-	for z := range worldMatrix {
-		worldMatrix[z] = make([]Tile, worldPtr.Data.Width*2)
-		for x := range worldMatrix[z] {
-			//worldMatrix[z][x] = NewTile()
-			// Copy the tile's data from the old world map to the new world map
-			worldMatrix[z][x] = w.Map[z/2][x/2]
-		}
-	}
-
-	w.Data.Width *= 2
-	w.Data.Length *= 2
-	w.Map = worldMatrix
-
-	// Introduce some randomness variation to the new world map
-	Smudge(&w)
-
-	// Update the world
-	*worldPtr = w
-}
-
-func Smudge(worldPtr *World) {
-	// Retrieve the world map
-	w := *worldPtr
-
-	// Smudge the world map
-	for z := 0; z < w.Data.Length; z++ {
-		for x := 0; x < w.Data.Width; x++ {
-			if w.Map[z][x].Labels[GroupCategory] == CategoryLand {
-				// Get the current coordinate
-				current := coord.NewCoord(z, x)
-
-				//fmt.Printf("[DEBUG] > z = %v | x = %v | lenght = %v | width = %v | map lenght = %v | map width = %v\n", z, x, w.Data.Length, w.Data.Width, len(w.Map), len(w.Map[0]))
-
-				// Get all 8 neighbors of the current coordinate and choose randomly 3 of them
-				neighborsCoords := coord.ConcatenateCoordSlices(
-					current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1),
-					current.GetDiagonalNeighbors(w.Data.Length-1, w.Data.Width-1),
-				)
-				choosedNeighbor := neighborsCoords[w.Seeder.Random.IntN(len(neighborsCoords))]
-
-				//fmt.Printf("[DEBUG] -> current = %+v | choosed neighbor = %+v\n", current, neighbor)
-
-				// Set it equal to the current with a 75% chance, if fails, set the current equal to the neighbor with a 75% chance
-				if w.Seeder.Random.IntN(4) == 0 {
-					w.Map[choosedNeighbor.Z][choosedNeighbor.X] = w.Map[z][x]
-				} else {
-					if w.Seeder.Random.IntN(4) == 0 {
-						w.Map[z][x] = w.Map[choosedNeighbor.Z][choosedNeighbor.X]
-					}
-				}
-			}
-		}
-	}
-
-	// Update the world map
-	*worldPtr = w
-}
-
-func AddIslands(worldPtr *World) {
-	// Retrieve the world map
-	w := *worldPtr
-
-	// Generate the coordinates of a random amount (based on the map size) of islands
-	//proportionalAmount := int(math.Round(float64(w.Data.Length*w.Data.Width) / 8))
-	//amountVariation := w.Seeder.Random.IntN(5) - 2 // [-2,+2]
-	// amount := proportionalAmount + amountVariation
-	amount := int(math.Round(float64(w.Data.Length*w.Data.Width) / 10))
-	randomCoords := make(coord.CoordSlice, 0)
-	for i := 0; i < amount; i++ {
-		randomCoords = append(randomCoords, coord.NewCoord(w.Seeder.Random.IntN(w.Data.Length), w.Seeder.Random.IntN(w.Data.Width)))
-	}
-
-	// For each coordinate, set it as land (create an island)
-	for _, coord := range randomCoords {
-		w.Map[coord.Z][coord.X].Labels[GroupCategory] = CategoryLand
-	}
-
-	// Update the world map
-	*worldPtr = w
-}
-
-func RemoveTooMuchOceans(worldPtr *World) {
-	// Retrieve the world map
-	w := *worldPtr
-
-	// Remove too much oceans from the world map, replacing them with land
-	// If a tile is ocean and as aligned neighbors all oceans, set it as land with a 50% chance
-	for z := 0; z < w.Data.Length; z++ {
-		for x := 0; x < w.Data.Width; x++ {
-			if w.Map[z][x].Labels[GroupCategory] == CategoryOcean {
-				// Get the current coordinate
-				current := coord.NewCoord(z, x)
-
-				// Get the 4 aligned neighbors of the current coordinate
-				alignedNeighborsCoords := current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1)
-
-				// Check if all the aligned neighbors are oceans
-				allOceans := true
-				for _, neighbor := range alignedNeighborsCoords {
-					if w.Map[neighbor.Z][neighbor.X].Labels[GroupCategory] != CategoryOcean {
-						allOceans = false
-						break
-					}
-				}
-
-				// If all the aligned neighbors are oceans, set the current as land with a 50% chance
-				if allOceans {
-					if w.Seeder.Random.IntN(2) == 0 {
-						w.Map[z][x].Labels[GroupCategory] = CategoryLand
-					}
-				}
-			}
-		}
-	}
-
-	// Update the world map
 	*worldPtr = w
 }
 
@@ -238,9 +88,6 @@ func AddTemperatures(worldPtr *World) {
 	newScale := noiseMap.ScaleRange{Min: 0, Max: 8}
 	for z := 0; z < w.Data.Length; z++ {
 		for x := 0; x < w.Data.Width; x++ {
-			// if z > w.Data.Length-3 || x > w.Data.Width-3 {
-			// 	fmt.Printf("[DEBUG] -> z = %v | x = %v | lenght = %v | width = %v | map lenght = %v | map width = %v\n", z, x, w.Data.Length, w.Data.Width, len(w.Map), len(w.Map[0]))
-			// }
 			// Convert the range value from [-1, 1] to [0, 8]
 			w.Temperature.ScalePixel(coord.Coord{X: x, Z: z}, w.Temperature.CurrentScale, newScale)
 
@@ -273,10 +120,9 @@ func AddTemperatures(worldPtr *World) {
 			}
 		}
 	}
-	w.Temperature.CurrentScale = newScale
-	noiseMap.PNMScalePixelDebugPrintTimes = 0
 
-	fmt.Println("[DEBUG] > > Temperatures added")
+	// Update the temperature noisemap scale
+	w.Temperature.CurrentScale = newScale
 
 	// If a warm tile has at least 1 cold/freezing neighbor, set it as temperate (5)
 	for z := 0; z < w.Data.Length; z++ {
@@ -327,7 +173,6 @@ func AddTemperatures(worldPtr *World) {
 			}
 		}
 	}
-	fmt.Println("[DEBUG] > > Temperatures adjusted")
 
 	// Update the world map
 	*worldPtr = w
@@ -373,9 +218,9 @@ func AddHumidity(worldPtr *World) {
 			}
 		}
 	}
+
+	// Update the humidity noisemap scale
 	w.Humidity.CurrentScale = newScale
-	noiseMap.PNMScalePixelDebugPrintTimes = 0
-	fmt.Println("[DEBUG] > > Humidity added")
 
 	// If a high humidity tile has at least 1 low/minimal humidity neighbor, set it as moderate (5)
 	for z := 0; z < w.Data.Length; z++ {
@@ -426,53 +271,11 @@ func AddHumidity(worldPtr *World) {
 			}
 		}
 	}
-	fmt.Println("[DEBUG] > > Humidity adjusted")
 
 	// Update the world map
 	*worldPtr = w
 }
 
-/*
-	func AddOceanAltitudes(worldPtr *World) {
-		// Retrieve the world map
-		w := *worldPtr
-
-		// Each tile of water is set with label DepthHigh if all 8 neighbors are water, otherwise DepthLow
-		for z := 0; z < w.Data.Length; z++ {
-			for x := 0; x < w.Data.Width; x++ {
-				if w.Map[z][x].Labels[GroupCategory] == CategoryOcean {
-					// Get the current coordinate
-					current := coord.NewCoord(z, x)
-
-					// Get all 8 neighbors of the current coordinate
-					neighborsCoords := coord.ConcatenateCoordSlices(
-						current.GetAlignedNeighbors(w.Data.Length-1, w.Data.Width-1),
-						current.GetDiagonalNeighbors(w.Data.Length-1, w.Data.Width-1),
-					)
-
-					// Check if all the neighbors are water, if so, set the current as DepthHigh
-					allWater := true
-					for _, neighbor := range neighborsCoords {
-						if w.Map[neighbor.Z][neighbor.X].Labels[GroupCategory] != CategoryOcean {
-							allWater = false
-							break
-						}
-					}
-					if allWater {
-						w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthHigh
-						w.Map[z][x].Labels[GroupAltitude] = Depth1
-					} else {
-						w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthLow
-						w.Map[z][x].Labels[GroupAltitude] = Depth0
-					}
-				}
-			}
-		}
-
-		// Update the world map
-		*worldPtr = w
-	}
-*/
 func AddOceanAltitudes(worldPtr *World) { // Retrieve the world map
 	w := *worldPtr
 
@@ -480,10 +283,10 @@ func AddOceanAltitudes(worldPtr *World) { // Retrieve the world map
 	for z := 0; z < w.Data.Length; z++ {
 		for x := 0; x < w.Data.Width; x++ {
 			if w.Map[z][x].Labels[GroupCategory] == CategoryOcean {
-				if w.Continentalness.Map[z][x] <= (w.Continentalness.CurrentScale.Max-9.5)-2.0 {
+				if w.Continentalness.Map[z][x] <= (w.Continentalness.CurrentScale.Max-19.0)-2.0 {
 					w.Map[z][x].Labels[GroupAltitude] = Depth1
 					w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthHigh
-				} else { // <= (w.Continentalness.CurrentScale.Max - 9.5)
+				} else { // <= (w.Continentalness.CurrentScale.Max - 19.0)
 					w.Map[z][x].Labels[GroupAltitude] = Depth0
 					w.Map[z][x].Labels[GroupMacroAltitude] = MacroDepthLow
 				}
@@ -499,32 +302,13 @@ func AddAltitudes(worldPtr *World) {
 	// Retrieve the world map
 	w := *worldPtr
 
-	var altitudeString string
-
 	// Calculate the altitude levels of the world map based on the altitude noise map
-	oceansNum, landsNum := 0, 0
-	minValBS, maxValBS, minValAS, maxValAS := math.MaxFloat64, math.SmallestNonzeroFloat64, math.MaxFloat64, math.SmallestNonzeroFloat64
 	newScale := noiseMap.ScaleRange{Min: 0, Max: 15}
 	for z := 0; z < w.Data.Length; z++ {
 		for x := 0; x < w.Data.Width; x++ {
 			if w.Map[z][x].Labels[GroupCategory] == CategoryLand {
-				landsNum++
-				if w.Altitude.Map[z][x] < minValBS {
-					minValBS = w.Altitude.Map[z][x]
-				}
-				if w.Altitude.Map[z][x] > maxValBS {
-					maxValBS = w.Altitude.Map[z][x]
-				}
-
 				// Convert the range value from [-1, 1] to [0, 15]
 				w.Altitude.ScalePixel(coord.Coord{X: x, Z: z}, w.Altitude.CurrentScale, newScale)
-
-				if w.Altitude.Map[z][x] < minValAS {
-					minValAS = w.Altitude.Map[z][x]
-				}
-				if w.Altitude.Map[z][x] > maxValAS {
-					maxValAS = w.Altitude.Map[z][x]
-				}
 
 				// Set the altitude of the world map tile based on the altitude noise map
 				switch {
@@ -577,39 +361,12 @@ func AddAltitudes(worldPtr *World) {
 					w.Map[z][x].Labels[GroupMacroAltitude] = MacroHeightLow
 					w.Map[z][x].Labels[GroupAltitude] = Height0
 				}
-
-				// Debug print
-				val, err := worldPtr.Map[z][x].Labels[GroupAltitude].Value()
-				if err != nil {
-					fmt.Println(err)
-					altitudeString += "?"
-					continue
-				}
-				altitudeString += fmt.Sprintf("%X", val)
-			} else {
-				oceansNum++
-
-				// Debug print
-				switch worldPtr.Map[z][x].Labels[GroupMacroAltitude] {
-				case MacroDepthHigh:
-					altitudeString += "-"
-				case MacroDepthLow:
-					altitudeString += " "
-				}
-
-				// Burn the value (convert the range value from [-1, 1] to [0, 0])
-				w.Altitude.ScalePixel(coord.Coord{X: x, Z: z}, w.Altitude.CurrentScale, noiseMap.ScaleRange{Min: 0, Max: 0})
 			}
 		}
-		altitudeString += "\n"
 	}
+
+	// Update the altitude noisemap scale
 	w.Altitude.CurrentScale = newScale
-	noiseMap.PNMScalePixelDebugPrintTimes = 0
-
-	StringToFile(altitudeString, "./noiseMap/runImages/altitudeA%v.txt")
-
-	fmt.Printf("[DEBUG] > > > Oceans: %v/%v | Lands: %v/%v\n", oceansNum, w.Data.Length*w.Data.Width, landsNum, w.Data.Length*w.Data.Width)
-	fmt.Printf("[DEBUG] > > > Altitude registered range: [%v, %v] | Scaled registered range: [%v, %v]\n", minValBS, maxValBS, minValAS, maxValAS)
 
 	// Update the world map
 	*worldPtr = w
@@ -618,8 +375,6 @@ func AddAltitudes(worldPtr *World) {
 func AdjustVariantsAltitudes(worldPtr *World) {
 	// Retrieve the world map
 	w := *worldPtr
-
-	var altitudeString string
 
 	// Transform special plains into collinar plains
 	for z := 0; z < w.Data.Length; z++ {
@@ -658,29 +413,8 @@ func AdjustVariantsAltitudes(worldPtr *World) {
 					}
 				}
 			}
-
-			// Debug print
-			if worldPtr.Map[z][x].Labels[GroupCategory] == CategoryLand {
-				val, err := worldPtr.Map[z][x].Labels[GroupAltitude].Value()
-				if err != nil {
-					fmt.Println(err)
-					altitudeString += "?"
-					continue
-				}
-				altitudeString += fmt.Sprintf("%X", val)
-			} else {
-				switch worldPtr.Map[z][x].Labels[GroupMacroAltitude] {
-				case MacroDepthHigh:
-					altitudeString += "-"
-				case MacroDepthLow:
-					altitudeString += " "
-				}
-			}
 		}
-		altitudeString += "\n"
 	}
-
-	StringToFile(altitudeString, "./noiseMap/runImages/altitudeB%v.txt")
 
 	// Update the world map
 	*worldPtr = w
@@ -703,8 +437,9 @@ func AddVariants(worldPtr *World) {
 			}
 		}
 	}
+
+	// Update the variant noisemap scale
 	w.Variants.CurrentScale = newScale
-	noiseMap.WNMScalePixelDebugPrintTimes = 0
 
 	// Update the world map
 	*worldPtr = w
@@ -714,64 +449,32 @@ func AddRivers(worldPtr *World) {
 	// Retrieve the world map
 	w := *worldPtr
 
-	minB, maxB, minA, maxA := math.MaxFloat64, math.SmallestNonzeroFloat64, math.MaxFloat64, math.SmallestNonzeroFloat64
-	minABS, maxABS := math.MaxFloat64, math.SmallestNonzeroFloat64
-	riversNoiseMapCopy := w.Rivers
-
 	// Add rivers to the world map based on the river noise map
 	newScale := noiseMap.ScaleRange{Min: -15, Max: 15}
-	fmt.Printf("[DEBUG] > > > Current range and new range: %+v => %+v\n", w.Rivers.CurrentScale, newScale)
+	// fmt.Printf("[DEBUG] > > > Current range and new range: %+v => %+v\n", w.Rivers.CurrentScale, newScale)
 	for z := 0; z < w.Data.Length; z++ {
 		for x := 0; x < w.Data.Width; x++ {
-			if w.Rivers.Map[z][x] < minB {
-				minB = w.Rivers.Map[z][x]
-			}
-			if w.Rivers.Map[z][x] > maxB {
-				maxB = w.Rivers.Map[z][x]
-			}
-
 			// Convert the range value from [-1, 1] to [-15, 15]
 			w.Rivers.ScalePixel(coord.Coord{X: x, Z: z}, w.Rivers.CurrentScale, newScale)
 
-			if w.Rivers.Map[z][x] < minA {
-				minA = w.Rivers.Map[z][x]
-			}
-			if w.Rivers.Map[z][x] > maxA {
-				maxA = w.Rivers.Map[z][x]
-			}
-
 			// Make the river noise map equal to the absolute value of it's self
 			w.Rivers.Map[z][x] = math.Abs(w.Rivers.Map[z][x])
-
-			if w.Rivers.Map[z][x] < minABS {
-				minABS = w.Rivers.Map[z][x]
-			}
-			if w.Rivers.Map[z][x] > maxABS {
-				maxABS = w.Rivers.Map[z][x]
-			}
 
 			// Filter the river noise map
 			if w.Rivers.Map[z][x] <= 0.5 {
 				if w.Map[z][x].Labels[GroupCategory] == CategoryLand {
 					if w.Map[z][x].Labels[GroupMacroAltitude] == MacroHeightLow || w.Map[z][x].Labels[GroupMacroAltitude] == MacroHeightMedium || w.Map[z][x].Labels[GroupAltitude] == Height10 {
 						w.Map[z][x].Labels[GroupCategory] = CategoryRiver
-					} else {
-						riversNoiseMapCopy.Map[z][x] = 15.0
 					}
-				} else {
-					riversNoiseMapCopy.Map[z][x] = 15.0
 				}
-			} else {
-				riversNoiseMapCopy.Map[z][x] = 15.0
 			}
 		}
 	}
+
+	// Update the river noisemap scale
 	w.Rivers.CurrentScale = newScale
-	noiseMap.PNMScalePixelDebugPrintTimes = 0
 
-	fmt.Printf("[DEBUG] > > > Rivers registered range: [%v, %v] | Scaled registered range: [%v, %v]\n", minB, maxB, minA, maxA)
-	fmt.Printf("[DEBUG] > > > Rivers absoluted range: [%v, %v]", minABS, maxABS)
-
+	// Save the edited river noise map as an image
 	w.Rivers.Image("./noiseMap/runImages/rivers_edited%v.png")
 
 	// Update the world map

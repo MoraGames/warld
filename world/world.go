@@ -177,92 +177,19 @@ func (w *World) Print(withLegend bool) {
 }
 
 func (w *World) Image(path string) {
-	var text string
-
-	wdO, tdO, cdO, fdO := 0, 0, 0, 0
-	wlO, tlO, clO, flO := 0, 0, 0, 0
-
+	// Create the base image
 	width, height := len(w.Map[0]), len(w.Map)
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
+
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			//fmt.Printf("[DEBUG] map[%v][%v] Color = %+v", y, x, w.Map[y][x].Typology.RGBAColor())
-			if GlobalDebugMode {
-				t := w.Map[y][x].PlainStringDebug()
-				text += t
-			}
-
+			// Convert each pixel to its color
 			c, err := w.Map[y][x].Typology.RGBAColor()
 			if err != nil {
 				panic(err)
 			}
 			img.Set(x, y, c)
-
-			if w.Map[y][x].Labels[GroupCategory] == CategoryOcean {
-				switch w.Map[y][x].Labels[GroupMacroAltitude] {
-				case MacroDepthLow:
-					switch w.Map[y][x].Labels[GroupMacroTemperature] {
-					case MacroTemperatureWarm:
-						if wlO == 0 {
-							fmt.Printf("[DEBUG] > Warm Low  [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
-						}
-						wlO++
-					case MacroTemperatureTemperate:
-						if tlO == 0 {
-							fmt.Printf("[DEBUG] > Temp Low  [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
-						}
-						tlO++
-					case MacroTemperatureCold:
-						if clO == 0 {
-							fmt.Printf("[DEBUG] > Cold Low  [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
-						}
-						clO++
-					case MacroTemperatureFreezing:
-						if flO == 0 {
-							fmt.Printf("[DEBUG] > Frez Low  [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
-						}
-						flO++
-					}
-				case MacroDepthHigh:
-					switch w.Map[y][x].Labels[GroupMacroTemperature] {
-					case MacroTemperatureWarm:
-						if wdO == 0 {
-							fmt.Printf("[DEBUG] > Warm Deep [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
-						}
-						wdO++
-					case MacroTemperatureTemperate:
-						if tdO == 0 {
-							fmt.Printf("[DEBUG] > Temp Deep [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
-						}
-						tdO++
-					case MacroTemperatureCold:
-						if cdO == 0 {
-							fmt.Printf("[DEBUG] > Cold Deep [%3v %3v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
-						}
-						cdO++
-					case MacroTemperatureFreezing:
-						if fdO == 0 {
-							fmt.Printf("[DEBUG] > Frez Deep [%v %v] = %+v | %+v\n", y, x, c, w.Map[y][x].Typology)
-						}
-						fdO++
-					}
-				}
-			}
 		}
-		if GlobalDebugMode {
-			text += "\n"
-		}
-	}
-
-	// Save the text to a file
-	fileText, err := os.Create(fmt.Sprintf(path, PathFilesNumber) + ".txt")
-	if err != nil {
-		panic(err)
-	}
-	defer fileText.Close()
-
-	if _, err := fileText.WriteString(text); err != nil {
-		panic(err)
 	}
 
 	// Save the image to a file

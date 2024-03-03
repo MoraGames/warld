@@ -106,10 +106,10 @@ func BiomesLegend() string {
 
 func NewBiome(name, color string) (Biome, error) {
 	if strings.TrimSpace(name) == "" {
-		return BiomeError, fmt.Errorf("Invalid name: name is empty")
+		return BiomeError, fmt.Errorf("invalid name: name is empty")
 	}
 	if strings.TrimSpace(color) == "" || len(color) != 7 || color[0] != '#' {
-		return BiomeError, fmt.Errorf("Invalid color: color is empty or not a valid Hex RGB color")
+		return BiomeError, fmt.Errorf("invalid color: color is empty or not a valid Hex RGB color")
 	}
 	biome := Biome{
 		Name:  name,
@@ -143,13 +143,13 @@ func (b Biome) RGBAColor() (color.RGBA, error) {
 func GenerateBiome(labels map[LabelGroup]Label, seeder *seed.Seeder) (Biome, error) {
 	// If the labels are empty, return an empty biome
 	if len(labels) == 0 {
-		return Biome{}, fmt.Errorf("Invalid labels: labels is empty")
+		return Biome{}, fmt.Errorf("invalid labels: labels is empty")
 	}
 
 	// Check if are available all the necessary labels to generate a biome
 	category, okCategory := labels[GroupCategory]
 	if !okCategory {
-		return Biome{}, fmt.Errorf("Invalid labels: category is missing")
+		return Biome{}, fmt.Errorf("invalid labels: category is missing")
 	}
 	macroTemperature /*, okMacroTemperature*/ := labels[GroupMacroTemperature]
 	temperature /*, okTemperature*/ := labels[GroupTemperature]
